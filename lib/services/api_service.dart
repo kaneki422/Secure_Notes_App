@@ -6,8 +6,6 @@ import 'package:http/http.dart' as http;
 class ApiService {
   static const String baseUrl =
       'https://secure-notes-backend-u6fz.onrender.com';
-  // static const String baseUrl = 'http://192.168.1.8:5000/api';
-  // static const String baseUrl = 'http://192.168.1.11:5000/api';
   static String? token;
 
   static Future<void> loadSavedToken() async {
@@ -15,30 +13,57 @@ class ApiService {
     token = prefs.getString('auth_token');
   }
 
+  // Helper method to safely decode JSON responses
+  static dynamic _parseResponse(
+    http.Response response,
+    int expectedStatus,
+    String defaultError,
+  ) {
+    // Check if response is HTML (Render waking up, 404, or server crash)
+    final contentType = response.headers['content-type'] ?? '';
+    final isJson = contentType.contains('application/json');
+
+    if (!isJson) {
+      throw Exception(
+        'Server returned HTML or invalid response (Status ${response.statusCode}). Please try again shortly.',
+      );
+    }
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode != expectedStatus) {
+      throw Exception(data['message'] ?? defaultError);
+    }
+
+    return data;
+  }
+
   // GET current user's profile
   static Future<Map<String, dynamic>> getProfile() async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.get(
       Uri.parse('$baseUrl/auth/me'),
-      headers: {'Authorization': 'Bearer $token'},
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Failed to load profile');
-    }
-    return data;
+    return _parseResponse(response, 200, 'Failed to load profile');
   }
 
   // DELETE current user's account
   static Future<void> deleteAccount() async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.delete(
       Uri.parse('$baseUrl/auth/me'),
       headers: {'Authorization': 'Bearer $token'},
     );
+
     if (response.statusCode != 200) {
-      final data = jsonDecode(response.body);
-      throw Exception(data['message'] ?? 'Failed to delete account');
+      throw Exception('Failed to delete account');
     }
-    token = null; // clear the stored session token
+    token = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
   }
 
   static Future<void> logout() async {
@@ -47,7 +72,7 @@ class ApiService {
     await prefs.remove('auth_token');
   }
 
-  //Signup
+  // Signup
   static Future<Map<String, dynamic>> signup(
     String email,
     String password,
@@ -57,11 +82,7 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 201) {
-      throw Exception(data['message'] ?? 'Signup failed');
-    }
-    return data;
+    return _parseResponse(response, 201, 'Signup failed');
   }
 
   // Login
@@ -74,36 +95,34 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Login failed');
-    }
+
+    final data = _parseResponse(response, 200, 'Login failed');
     token = data['token'];
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'auth_token',
-      token!,
-    ); //here it will save the token for future requests.
+    if (token != null) {
+      await prefs.setString('auth_token', token!);
+    }
     return data;
   }
 
-  //Get all Notes
+  // Get all Notes
   static Future<List<dynamic>> getNotes() async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.get(
       Uri.parse('$baseUrl/notes'),
-      headers: {'Authorization': 'Bearer $token'},
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load Notes');
-    }
-    return jsonDecode(response.body);
+    return _parseResponse(response, 200, 'Failed to load notes');
   }
 
-  //Create a Note
+  // Create a Note
   static Future<Map<String, dynamic>> createNote(
     String title,
     String content,
   ) async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.post(
       Uri.parse('$baseUrl/notes'),
       headers: {
@@ -112,19 +131,17 @@ class ApiService {
       },
       body: jsonEncode({'title': title, 'content': content}),
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 201) {
-      throw Exception(data['message'] ?? 'Failed to create notes');
-    }
-    return data;
+    return _parseResponse(response, 201, 'Failed to create note');
   }
 
-  //Update a note
+  // Update a note
   static Future<Map<String, dynamic>> updateNote(
     String id,
     String title,
     String content,
   ) async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.put(
       Uri.parse('$baseUrl/notes/$id'),
       headers: {
@@ -133,11 +150,7 @@ class ApiService {
       },
       body: jsonEncode({'title': title, 'content': content}),
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Failed to update note');
-    }
-    return data;
+    return _parseResponse(response, 200, 'Failed to update note');
   }
 
   // Toggle a note's pinned status
@@ -145,6 +158,8 @@ class ApiService {
     String id,
     bool isPinned,
   ) async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.put(
       Uri.parse('$baseUrl/notes/$id'),
       headers: {
@@ -153,15 +168,13 @@ class ApiService {
       },
       body: jsonEncode({'isPinned': isPinned}),
     );
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Failed to update pin status');
-    }
-    return data;
+    return _parseResponse(response, 200, 'Failed to update pin status');
   }
 
-  //Delete a note
+  // Delete a note
   static Future<void> deleteNote(String id) async {
+    if (token == null) await loadSavedToken();
+
     final response = await http.delete(
       Uri.parse('$baseUrl/notes/$id'),
       headers: {'Authorization': 'Bearer $token'},
