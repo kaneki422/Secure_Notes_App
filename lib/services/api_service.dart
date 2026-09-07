@@ -41,11 +41,25 @@ class ApiService {
   // GET current user's profile
   static Future<Map<String, dynamic>> getProfile() async {
     if (token == null) await loadSavedToken();
+
     final response = await http.get(
       Uri.parse('$baseUrl/auth/me'),
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
-    return _parseResponse(response, 200, 'Failed to load profile');
+
+    // If token is invalid or expired (401/403)
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout(); // Clear invalid token from SharedPreferences
+      throw Exception('Session expired. Please log in again.');
+    }
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load profile');
+    }
+
+    return data;
   }
 
   // DELETE current user's account
