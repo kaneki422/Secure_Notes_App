@@ -41,7 +41,6 @@ class ApiService {
   // GET current user's profile
   static Future<Map<String, dynamic>> getProfile() async {
     if (token == null) await loadSavedToken();
-
     final response = await http.get(
       Uri.parse('$baseUrl/auth/me'),
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
