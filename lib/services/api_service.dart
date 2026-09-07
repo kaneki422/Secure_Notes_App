@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -8,18 +9,30 @@ class ApiService {
       'https://secure-notes-backend-u6fz.onrender.com/api';
   static String? token;
 
+  // Helper method to check if the device has an active internet connection
+  static Future<void> _checkInternet() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw Exception('You are offline.');
+      }
+    } on SocketException catch (_) {
+      throw Exception('You are offline.');
+    }
+  }
+
   static Future<void> loadSavedToken() async {
     final prefs = await SharedPreferences.getInstance();
     token = prefs.getString('auth_token');
   }
 
-  // Helper method to safely decode JSON responses
+  // Helper method to safely decode JSON responses and check status codes
   static dynamic _parseResponse(
     http.Response response,
     int expectedStatus,
     String defaultError,
   ) {
-    // Check if response is HTML (Render waking up, 404, or server crash)
+    // Check if the server returned HTML (e.g., Render cold start, 404, or crash)
     final contentType = response.headers['content-type'] ?? '';
     final isJson = contentType.contains('application/json');
 
@@ -40,6 +53,7 @@ class ApiService {
 
   // GET current user's profile
   static Future<Map<String, dynamic>> getProfile() async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.get(
@@ -47,36 +61,32 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
 
-    // If token is invalid or expired (401/403)
+    // Handle invalid or expired session tokens
     if (response.statusCode == 401 || response.statusCode == 403) {
-      await logout(); // Clear invalid token from SharedPreferences
+      await logout();
       throw Exception('Session expired. Please log in again.');
     }
 
-    final data = jsonDecode(response.body);
-
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Failed to load profile');
-    }
-
-    return data;
+    return _parseResponse(response, 200, 'Failed to load profile');
   }
 
   // DELETE current user's account
   static Future<void> deleteAccount() async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.delete(
       Uri.parse('$baseUrl/auth/me'),
-      headers: {'Authorization': 'Bearer $token'},
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete account');
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
     }
-    token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
+
+    _parseResponse(response, 200, 'Failed to delete account');
+    await logout();
   }
 
   static Future<void> logout() async {
@@ -90,6 +100,8 @@ class ApiService {
     String email,
     String password,
   ) async {
+    await _checkInternet();
+
     final response = await http.post(
       Uri.parse('$baseUrl/auth/signup'),
       headers: {'Content-Type': 'application/json'},
@@ -103,6 +115,8 @@ class ApiService {
     String email,
     String password,
   ) async {
+    await _checkInternet();
+
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -111,8 +125,9 @@ class ApiService {
 
     final data = _parseResponse(response, 200, 'Login failed');
     token = data['token'];
-    final prefs = await SharedPreferences.getInstance();
+
     if (token != null) {
+      final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', token!);
     }
     return data;
@@ -120,12 +135,19 @@ class ApiService {
 
   // Get all Notes
   static Future<List<dynamic>> getNotes() async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.get(
       Uri.parse('$baseUrl/notes'),
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
+    }
+
     return _parseResponse(response, 200, 'Failed to load notes');
   }
 
@@ -134,6 +156,7 @@ class ApiService {
     String title,
     String content,
   ) async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.post(
@@ -144,6 +167,12 @@ class ApiService {
       },
       body: jsonEncode({'title': title, 'content': content}),
     );
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
+    }
+
     return _parseResponse(response, 201, 'Failed to create note');
   }
 
@@ -153,6 +182,7 @@ class ApiService {
     String title,
     String content,
   ) async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.put(
@@ -163,6 +193,12 @@ class ApiService {
       },
       body: jsonEncode({'title': title, 'content': content}),
     );
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
+    }
+
     return _parseResponse(response, 200, 'Failed to update note');
   }
 
@@ -171,6 +207,7 @@ class ApiService {
     String id,
     bool isPinned,
   ) async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.put(
@@ -181,19 +218,30 @@ class ApiService {
       },
       body: jsonEncode({'isPinned': isPinned}),
     );
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
+    }
+
     return _parseResponse(response, 200, 'Failed to update pin status');
   }
 
   // Delete a note
   static Future<void> deleteNote(String id) async {
+    await _checkInternet();
     if (token == null) await loadSavedToken();
 
     final response = await http.delete(
       Uri.parse('$baseUrl/notes/$id'),
-      headers: {'Authorization': 'Bearer $token'},
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete note');
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await logout();
+      throw Exception('Session expired. Please log in again.');
     }
+
+    _parseResponse(response, 200, 'Failed to delete note');
   }
 }
