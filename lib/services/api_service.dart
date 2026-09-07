@@ -4,7 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:5000/api';
+  static const String baseUrl =
+      'https://secure-notes-backend-u6fz.onrender.com';
   // static const String baseUrl = 'http://192.168.1.8:5000/api';
   // static const String baseUrl = 'http://192.168.1.11:5000/api';
   static String? token;
