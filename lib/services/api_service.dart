@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl =
-      'https://secure-notes-backend-u6fz.onrender.com';
+      'https://secure-notes-backend-u6fz.onrender.com/api';
   static String? token;
 
   static Future<void> loadSavedToken() async {
