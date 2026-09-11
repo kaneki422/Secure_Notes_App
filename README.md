@@ -81,4 +81,4 @@ lib/
 
 ## Author
 
-Built by [Rohit Raj](https://github.com/kaneki422) as a personal project combining a cybersecurity background with full-stack mobile development.
+Built by [Rohit Raj](https://github.com/kaneki422) as a personal project combining a cybersecurity background with full stack mobile development.
